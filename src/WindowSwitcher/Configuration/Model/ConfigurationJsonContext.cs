@@ -12,6 +12,7 @@ internal partial class ConfigurationJsonContext : JsonSerializerContext {
             WindowConfigurations: [], 
             IpAddress: "127.0.0.1",
             Port: 9999,
+            ApiKey: "0000",
             Monitor: IOMonitor.Internal.MonitorType.Timer
             );
 }

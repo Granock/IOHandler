@@ -80,14 +80,13 @@ public class TcpIoMonitor(
         while (socket.Connected && !cancellationToken.IsCancellationRequested) {
             string? line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
             logger.LogInformation("Received client message: {message}", line);
+            if (line is null) return;
             if (string.IsNullOrWhiteSpace(line)) continue;
 
             string[] splits = line.Split(":");
             int opcode = int.Parse(splits[2]);
             long milis = long.Parse(splits[3]);
             DateTimeOffset timestamp = DateTimeOffset.FromUnixTimeMilliseconds(milis);
-
-            logger.LogInformation("Received Opcode: {opcode}, Timestamp: {timestamp}", opcode, timestamp);
 
             string opCodeResponse = string.Format(OPCODE_MESSAGE_RESPONSE, opcode, timestamp.ToUnixTimeMilliseconds());
             await writer.WriteLineAsync(opCodeResponse).ConfigureAwait(false);

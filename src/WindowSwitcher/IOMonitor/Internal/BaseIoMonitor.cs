@@ -30,7 +30,7 @@ public abstract class BaseIoMonitor : IIoMonitor, IDisposable {
     public abstract void StopIoMonitoring();
     
     protected void OperationReceived(int opcode, DateTimeOffset timestamp) {
-        _logger.LogInformation(message: "received OpCode: {OpCode}, Timestamp: {Timestamp}", opcode, timestamp);
+        _logger.LogInformation(message: "Received OpCode: {OpCode}, Timestamp: {Timestamp}", opcode, timestamp);
         if (!_opCodeQueue.Writer.TryWrite((opcode, timestamp))) {
             _logger.LogWarning("Failed to add OpCode: {OpCode} to Channel", opcode);
         }
@@ -72,6 +72,7 @@ public abstract class BaseIoMonitor : IIoMonitor, IDisposable {
             4 => SwitchType.LastWindow,
             _ => throw new ArgumentOutOfRangeException(nameof(opCode))
         };
+        return; //TODO remove
         _switcher.SwitchWindow(type);
     }
 
