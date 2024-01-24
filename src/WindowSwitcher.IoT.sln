@@ -1,0 +1,37 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.8.34408.163
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IoT.IO.Handler", "IoT.IO.Handler\IoT.IO.Handler.csproj", "{AA9A0411-AD36-4D08-8987-A03CF0E9B72F}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Iot.IO.Handler.Tester", "Iot.IO.Handler.Tester\Iot.IO.Handler.Tester.csproj", "{8DBFF087-1DB7-4088-8E34-3ACAA293A403}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "WindowSwitcher", "WindowSwitcher\WindowSwitcher.csproj", "{6F7D72EE-444F-4D0F-A802-D2A4F9BCC11F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{AA9A0411-AD36-4D08-8987-A03CF0E9B72F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AA9A0411-AD36-4D08-8987-A03CF0E9B72F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AA9A0411-AD36-4D08-8987-A03CF0E9B72F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AA9A0411-AD36-4D08-8987-A03CF0E9B72F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8DBFF087-1DB7-4088-8E34-3ACAA293A403}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8DBFF087-1DB7-4088-8E34-3ACAA293A403}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8DBFF087-1DB7-4088-8E34-3ACAA293A403}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8DBFF087-1DB7-4088-8E34-3ACAA293A403}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6F7D72EE-444F-4D0F-A802-D2A4F9BCC11F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6F7D72EE-444F-4D0F-A802-D2A4F9BCC11F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6F7D72EE-444F-4D0F-A802-D2A4F9BCC11F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6F7D72EE-444F-4D0F-A802-D2A4F9BCC11F}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {936D1E60-4D3A-4270-8EA6-A4EEDF984486}
+	EndGlobalSection
+EndGlobal
