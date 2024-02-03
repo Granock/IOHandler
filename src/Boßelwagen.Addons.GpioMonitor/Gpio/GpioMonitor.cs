@@ -1,30 +1,28 @@
 ﻿using System.Device.Gpio;
 using Boßelwagen.Addons.GpioMonitor.Configuration;
-using Boßelwagen.Addons.Lib.Communication;
 using Boßelwagen.Addons.Lib.Communication.Sender;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Boßelwagen.Addons.GpioMonitor.Gpio;
 
-public class GpioMonitor : IDisposable {
+public class GpioMonitor : IHostedService {
     
     private readonly GpioController _gpioController;
     private readonly ILogger<GpioMonitor> _logger;
     private readonly OpCodeSender _opCodeSender;
+    private readonly GpioConfiguration _configuration;
+
     private IDictionary<int, IoOperation>? _operations;
-    private bool _disposedValue;
     
     public GpioMonitor(GpioController gpioController,
-            ILogger<GpioMonitor> logger,
-            OpCodeSender opCodeSender,
-            GpioConfiguration configuration) {
+                       ILogger<GpioMonitor> logger,
+                       OpCodeSender opCodeSender,
+                       GpioConfiguration configuration) {
         _gpioController = gpioController;
         _logger = logger;
         _opCodeSender = opCodeSender;
-        _operations = configuration.Configurations
-            .Select(selector: x => new IoOperation(configuration: x))
-            .Select(selector: InitHandlerForOperation)
-            .ToDictionary(keySelector: x => x.Pin);
+        _configuration = configuration;
     }
     
     private IoOperation InitHandlerForOperation(IoOperation operation) {
@@ -83,7 +81,7 @@ public class GpioMonitor : IDisposable {
     }
 
     private void SendOpCodeForOperation(IoOperation operation) {
-        _logger.LogInformation(
+        _logger.LogDebug(
             message: "Sending OpCode for {Pin} with Rising {Rising}, Falling {Falling} and OpCode {OpCode}",
             operation.Pin,
             operation.Rising,
@@ -92,28 +90,29 @@ public class GpioMonitor : IDisposable {
 
         _opCodeSender.SendOpCode(opcode: operation.OpCode);
 
-        _logger.LogInformation(
+        _logger.LogDebug(
             message: "Sent OpCode for {Pin} with Rising {Rising}, Falling {Falling} and OpCode {OpCode}",
             operation.Pin,
             operation.Rising,
             operation.Falling,
             operation.OpCode);
     }
-    
-    protected virtual void Dispose(bool disposing) {
-        if (_disposedValue) return;
-        if (_operations is not null) {
-            foreach (KeyValuePair<int, IoOperation> item in _operations) {
-                CleanupHandlerForOperation(item.Value);
-            }
-            _operations = null;
-        }
-        _disposedValue = true;
+
+
+    public Task StartAsync(CancellationToken cancellationToken) {
+        _operations = _configuration.Configurations
+            .Select(selector: x => new IoOperation(configuration: x))
+            .Select(selector: InitHandlerForOperation)
+            .ToDictionary(keySelector: x => x.Pin);
+        return Task.CompletedTask;
     }
 
-    public void Dispose() {
-        Dispose(disposing: true);
-        GC.SuppressFinalize(this);
+    public Task StopAsync(CancellationToken cancellationToken) {
+        if (_operations is { Count: > 0}) {
+            foreach (KeyValuePair<int, IoOperation> item in _operations) {
+                CleanupHandlerForOperation(registration: item.Value);
+            }
+        }
+        return Task.CompletedTask;
     }
-    
 }

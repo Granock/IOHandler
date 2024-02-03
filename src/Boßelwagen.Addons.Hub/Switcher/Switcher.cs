@@ -28,6 +28,8 @@ public class Switcher(IConfigurationService<HubConfiguration> configurationServi
             Initialize();
         }
 
+        return;
+
         //Keine fenster wirkt falsch, init neu
         if (_windows.Length is 0) {
             logger.LogWarning("reset, as no Windows was present in switcher");

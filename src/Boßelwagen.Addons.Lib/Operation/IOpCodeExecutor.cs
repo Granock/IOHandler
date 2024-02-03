@@ -1,5 +1,7 @@
-﻿namespace Boßelwagen.Addons.Lib.Operation;
+﻿using Microsoft.Extensions.Hosting;
 
-public interface IOpCodeExecutor {
+namespace Boßelwagen.Addons.Lib.Operation;
+
+public interface IOpCodeExecutor : IHostedService {
     void ExecuteOpCodeMessage(OpCodeMessage message);
 }

@@ -1,6 +1,7 @@
-﻿namespace Boßelwagen.Addons.Lib.Communication.Receiver;
+﻿using Microsoft.Extensions.Hosting;
 
-public interface IOpCodeReceiver {
-    void StartReceiving();
-    void StopReceiving();
+namespace Boßelwagen.Addons.Lib.Communication.Receiver;
+
+public interface IOpCodeReceiver : IHostedService {
+
 }

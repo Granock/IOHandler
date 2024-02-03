@@ -1,89 +1,81 @@
 ﻿using System.Threading.Channels;
 using Boßelwagen.Addons.Hub.Switcher;
 using Boßelwagen.Addons.Lib.Operation;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Boßelwagen.Addons.Hub.OpCodeExecutor;
 
-public sealed class OpCodeSwitcherExecutor : IOpCodeExecutor, IDisposable {
+public sealed class OpCodeSwitcherExecutor : BackgroundService, IOpCodeExecutor {
     
     private readonly ISwitcher _switcher;
     private readonly ILogger<OpCodeSwitcherExecutor> _logger;
     private readonly Channel<OpCodeMessage> _opCodeQueue;
-    private readonly CancellationTokenSource _cancellationTokenSource;
-    private readonly Task _queueWorkerTask;
-    
+    private readonly TimeSpan Cooldown = TimeSpan.FromSeconds(value: 5);
+    private readonly TimeSpan Expiration = TimeSpan.FromSeconds(value: 10);
+
     public OpCodeSwitcherExecutor(ISwitcher switcher, ILogger<OpCodeSwitcherExecutor> logger) {
         _switcher = switcher;
         _logger = logger;
-        _opCodeQueue = Channel.CreateBounded<OpCodeMessage>(new BoundedChannelOptions(capacity: 10) {
+        _opCodeQueue = Channel.CreateBounded<OpCodeMessage>(
+            options: new BoundedChannelOptions(capacity: 10) {
             AllowSynchronousContinuations = false,
             FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true
         });
-        _cancellationTokenSource = new CancellationTokenSource();
-        _queueWorkerTask = Task.Run(
-            function: () => WorkQueueAsync(_cancellationTokenSource.Token), 
-            cancellationToken: _cancellationTokenSource.Token);
     }
     
     public void ExecuteOpCodeMessage(OpCodeMessage message) {
-        _logger.LogInformation(message: "Received OpCodeMessage {Message}", message);
-        if (!_opCodeQueue.Writer.TryWrite(message)) {
-            _logger.LogWarning("Failed to add OpCodeMessage: {Message} to Channel", message);
+        _logger.LogInformation(message: "Received OpCodeMessage {Message}", args: message);
+        if (!_opCodeQueue.Writer.TryWrite(item: message)) {
+            _logger.LogWarning(message: "Failed to add OpCodeMessage: {Message} to Channel", args: message);
         }
     }
-    
-    private async Task? WorkQueueAsync(CancellationToken cancellationToken) {
-        TimeSpan cooldown = TimeSpan.FromSeconds(5);
-        TimeSpan ageGate = TimeSpan.FromSeconds(10);
-        Dictionary<int, DateTimeOffset> lastTimeOfOpCode = new();
-        
-        _logger.LogInformation(message: "Started QueueWorkerThread");
-        await foreach ((int opCode, DateTimeOffset receivedAt) in _opCodeQueue.Reader.ReadAllAsync(cancellationToken: cancellationToken)) {
-            _logger.LogInformation(message: "Read OpCode: {Opcode} Time: {Timestamp} from Channel", opCode, receivedAt);
 
-            //Message ist zu alt
-            if (receivedAt - DateTimeOffset.UtcNow > ageGate) {
+    protected async override Task ExecuteAsync(CancellationToken stoppingToken) {
+        _logger.LogInformation(message: $"Started {nameof(OpCodeSwitcherExecutor)}");
+        try {
+            await WorkQueueAsync(cancellationToken: stoppingToken)
+                .ConfigureAwait(continueOnCapturedContext: false);
+        } catch (Exception ex) {
+            _logger.LogError(exception: ex, message: $"Exception in {nameof(OpCodeSwitcherExecutor)}");
+        }
+        _logger.LogInformation(message: $"Stopped {nameof(OpCodeSwitcherExecutor)}");
+    }
+
+    private async Task WorkQueueAsync(CancellationToken cancellationToken) {
+        Dictionary<int, DateTimeOffset> lastTimeOfOpCode = [];
+        await foreach (OpCodeMessage message in _opCodeQueue.Reader.ReadAllAsync(cancellationToken: cancellationToken)) {
+            _logger.LogInformation(message: "Read Message {Message} from Channel", args: message);
+
+            //Message expired
+            if (message.Timestamp - DateTimeOffset.UtcNow > Expiration) {
                 continue;
             }
             
             //Message ist zu neu
-            if (lastTimeOfOpCode.TryGetValue(opCode, out DateTimeOffset value) && receivedAt - value < cooldown) {
+            if (lastTimeOfOpCode.TryGetValue(key: message.OpCode, value: out DateTimeOffset value) && message.Timestamp - value < Cooldown) {
                 continue;
             }
             
-            lastTimeOfOpCode[opCode] = receivedAt;
-            _logger.LogInformation(message: "Handling OpCode: {Opcode} at Switcher", opCode);
-            HandleOpcodeAtSwitcher(opCode);
+            lastTimeOfOpCode[key: message.OpCode] = message.Timestamp;
+
+            SwitchType? type = message.OpCode switch {
+                1 => SwitchType.NextWindow,
+                2 => SwitchType.PreviousWindow,
+                3 => SwitchType.FirstWindow,
+                4 => SwitchType.LastWindow,
+                _ => null
+            };
+
+
+            _logger.LogDebug(message: "Got SwitchType {SwitchType} for Message {Message}", type, message);
+
+            if (type is null) return;
+
+            _switcher.SwitchWindow(switchType: type.Value);
+
         }
-        _logger.LogInformation(message: "Stopped QueueWorkerThread");
     }
 
-    private void HandleOpcodeAtSwitcher(int opCode) {
-        try {
-            HandleOpcodeAtSwitcherCore(opCode);
-        } catch (Exception ex) {
-            _logger.LogError(
-                exception: ex, 
-                message: "Error while Handling OpCode: {Opcode} at Switcher", 
-                args: opCode);
-        }
-    }
-
-    private void HandleOpcodeAtSwitcherCore(int opCode) {
-        SwitchType type = opCode switch {
-            1 => SwitchType.NextWindow,
-            2 => SwitchType.PreviousWindow,
-            3 => SwitchType.FirstWindow,
-            4 => SwitchType.LastWindow,
-            _ => throw new ArgumentOutOfRangeException(nameof(opCode))
-        };
-        _switcher.SwitchWindow(type);
-    }
-
-    public void Dispose() {
-        _cancellationTokenSource.Dispose();
-        _queueWorkerTask.Dispose();
-    }
 }

@@ -1,53 +1,47 @@
 ﻿using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Channels;
 using Boßelwagen.Addons.Lib.Operation;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Boßelwagen.Addons.Lib.Communication.Sender;
 
-public sealed class OpCodeSender : IDisposable {
+public sealed class OpCodeSender : BackgroundService {
 
     private readonly string _apiKey;
-    private readonly ILogger _logger;
+    private readonly ILogger<OpCodeSender> _logger;
     private readonly Channel<OpCodeMessage> _messageQueue;
-    private readonly CancellationTokenSource? _cancellationTokenSource;
-    private readonly Task _connectionWorkerTask;
     
-    public OpCodeSender(ILogger logger, string apiKey) {
+    public OpCodeSender(ILogger<OpCodeSender> logger, string apiKey) {
         _logger = logger;
         _apiKey = apiKey;
         _messageQueue = Channel.CreateUnbounded<OpCodeMessage>();
-        _cancellationTokenSource = new CancellationTokenSource();
-        _connectionWorkerTask = Task.Run(
-            function: () => ReceiveConnectionWorkerAsync(cancellationToken: _cancellationTokenSource.Token), 
-            cancellationToken: _cancellationTokenSource.Token);
     }
     
     public void SendOpCode(int opcode) {
         OpCodeMessage message = OpCodeMessage.FromOpCode(opcode);
-        _logger.LogInformation(
-            message: "Adding message {Message} to OpCodeSender-Queue", 
-            message.ToString());
+        _logger.LogInformation(message: "Adding message {Message} to Queue of OpCodeSender", args: message);
         if (!_messageQueue.Writer.TryWrite(item: message)) {
-            _logger.LogError(message: "Failed to Add message {Message}", args: message.ToString());
+            _logger.LogError(message: "Failed to Add message {Message}", args: message);
         }
     }
 
-    private async Task ReceiveConnectionWorkerAsync(CancellationToken cancellationToken) {
+    protected async override Task ExecuteAsync(CancellationToken stoppingToken) {
+        _logger.LogInformation(message: $"Started in {nameof(OpCodeSender)}");
         try {
-            await ReceiveConnectionWorkerCoreAsync(cancellationToken)
+            await ReceiveConnectionWorkerCoreAsync(stoppingToken)
                 .ConfigureAwait(continueOnCapturedContext: false);
         } catch (Exception ex) {
-            _logger.LogError(exception: ex, message: "Error in ReceiveConnectionWorkerCore");
+            _logger.LogError(exception: ex, message: $"Exception in {nameof(OpCodeSender)}");
         }
+        _logger.LogInformation(message: $"Stopped in {nameof(OpCodeSender)}");
     }
 
     private async Task ReceiveConnectionWorkerCoreAsync(CancellationToken cancellationToken) {
-        using Socket serverSocket = new(
-            socketType: SocketType.Stream, 
-            protocolType: ProtocolType.Tcp);
-
+        //Setup Socket
+        using Socket serverSocket = new(socketType: SocketType.Stream, protocolType: ProtocolType.Tcp);
         serverSocket.Bind(localEP: new IPEndPoint(address: IPAddress.Any, port: 9999));
         serverSocket.Listen(backlog: 1);
 
@@ -55,23 +49,20 @@ public sealed class OpCodeSender : IDisposable {
             //Accept connection
             _logger.LogDebug(message: "Waiting for client-connection");
             
-            using Socket clientSocket = await serverSocket.AcceptAsync(cancellationToken);
+            using Socket clientSocket = await serverSocket.AcceptAsync(cancellationToken)
+                                                          .ConfigureAwait(continueOnCapturedContext: false);
             cancellationToken.ThrowIfCancellationRequested();
 
             _logger.LogInformation(message: "accepted client-connection");
 
             //Handle Auth and Message sending
-            await HandleClientConnectionAsync(clientSocket, cancellationToken);
+            try {
+                await HandleClientConnectionCoreAsync(clientSocket, cancellationToken)
+                    .ConfigureAwait(continueOnCapturedContext: false);
+            } catch (Exception ex) {
+                _logger.LogError(exception: ex, message: "Error on Handling Client-Communication");
+            }
             clientSocket.Close();
-        }
-    }
-
-    private async Task HandleClientConnectionAsync(Socket clientSocket, CancellationToken cancellationToken) {
-        try {
-            await HandleClientConnectionCoreAsync(clientSocket, cancellationToken)
-                .ConfigureAwait(continueOnCapturedContext: false);
-        } catch (Exception ex) {
-            _logger.LogError(exception: ex, message: "Error on Handling Client-Communication");
         }
     }
 
@@ -86,9 +77,12 @@ public sealed class OpCodeSender : IDisposable {
         string? line = await reader.ReadLineAsync(cancellationToken)
             .ConfigureAwait(continueOnCapturedContext: false);
 
-        if (string.IsNullOrWhiteSpace(value: line) || !line.StartsWith(value: Constants.API_KEY_AUTH_REQUEST)) {
-            await writer.WriteLineAsync(value: Constants.API_KEY_AUTH_RESPONSE_FAILED);
-            await writer.FlushAsync();
+        if (string.IsNullOrWhiteSpace(value: line) 
+            || !line.StartsWith(value: Constants.API_KEY_AUTH_REQUEST)) {
+            await writer.WriteLineAsync(value: Constants.API_KEY_AUTH_RESPONSE_FAILED)
+                .ConfigureAwait(continueOnCapturedContext: false);
+            await writer.FlushAsync()
+                .ConfigureAwait(continueOnCapturedContext: false);
             _logger.LogWarning(message: "Failed API-KEY-AUTH with Request ({Request})", args: line);
             return;
         }
@@ -96,25 +90,29 @@ public sealed class OpCodeSender : IDisposable {
         string apiKey = line.Replace(oldValue: Constants.API_KEY_AUTH_REQUEST, newValue: string.Empty).Trim();
         
         if (!string.Equals(a: apiKey, b: _apiKey, comparisonType: StringComparison.InvariantCulture)) {
-            await writer.WriteLineAsync(value: Constants.API_KEY_AUTH_RESPONSE_FAILED);
-            await writer.FlushAsync();
+            await writer.WriteLineAsync(value: Constants.API_KEY_AUTH_RESPONSE_FAILED)
+                .ConfigureAwait(continueOnCapturedContext: false);
+            await writer.FlushAsync()
+                .ConfigureAwait(continueOnCapturedContext: false);
             _logger.LogWarning(message: "Failed API-KEY-AUTH with Request ({Request})", args: line);
             return;
         }
 
-        await writer.WriteLineAsync(value: Constants.API_KEY_AUTH_RESPONSE_SUCCESS);
-        await writer.FlushAsync();
+        await writer.WriteLineAsync(value: Constants.API_KEY_AUTH_RESPONSE_SUCCESS)
+            .ConfigureAwait(continueOnCapturedContext: false);
+        await writer.FlushAsync()
+            .ConfigureAwait(continueOnCapturedContext: false);
         _logger.LogInformation(message: "Success for API-KEY-AUTH with Request ({Request})", args: line);
 
         await foreach (OpCodeMessage item in _messageQueue.Reader.ReadAllAsync(cancellationToken: cancellationToken)) {
-            _logger.LogInformation(message: "Sending OpcodeMessage {Message}", item.ToString());
-            await writer.WriteLineAsync(value: 
-                string.Format(
-                    format: Constants.OPCODE_MESSAGE_REQUEST, 
-                    arg0: item));
-            await writer.FlushAsync();
+            _logger.LogInformation(message: "Sending OpcodeMessage {Message}", args: item);
+            await writer.WriteLineAsync(value: string.Format(format: Constants.OPCODE_MESSAGE_REQUEST, arg0: item))
+                .ConfigureAwait(continueOnCapturedContext: false);
+            await writer.FlushAsync()
+                .ConfigureAwait(continueOnCapturedContext: false);
 
-            line = await reader.ReadLineAsync(cancellationToken: cancellationToken);
+            line = await reader.ReadLineAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(continueOnCapturedContext: false);
 
             //We expect a response, that contains the same information
             if (!string.Equals(
@@ -139,10 +137,4 @@ public sealed class OpCodeSender : IDisposable {
             return;
         }
     }
-    
-    public void Dispose() {
-        _cancellationTokenSource?.Dispose();
-        _connectionWorkerTask?.Dispose();
-    }
-    
 }
